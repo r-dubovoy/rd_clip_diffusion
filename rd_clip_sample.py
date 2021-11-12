@@ -31,6 +31,21 @@ def resize_image(image, out_size):
     size = round((area * ratio)**0.5), round((area / ratio)**0.5)
     return image.resize(size, Image.LANCZOS)
 
+def parse_prompts(prompts):
+  target_p = []
+  target_w = []
+  splt = prompts.split('|')
+  if splt == [prompts]:
+    target_p.append(prompts)
+    target_w.append(1)
+  else:
+    for prompt in splt:
+      p, w = tuple(prompt.split(':'))
+      target_p.append(p)
+      target_w.append(float(w))
+  return target_p, target_w
+
+
 def make_normalize(mean, std):
     mean = jnp.array(mean).reshape([3, 1, 1])
     std = jnp.array(std).reshape([3, 1, 1])
@@ -93,7 +108,11 @@ def main(args=None):
     normalize = make_normalize(mean=[0.48145466, 0.4578275, 0.40821073],
                                std=[0.26862954, 0.26130258, 0.27577711])
 
-    target_embed = text_fn(clip_params, clip_jax.tokenize([args.prompt]))
+    target_prompts, target_w = parse_prompts(args.prompt)
+    target_embeds = []
+    for prompt in target_prompts:
+        target_embeds.append(text_fn(clip_params, clip_jax.tokenize([prompt])))
+    # target_embed = text_fn(clip_params, clip_jax.tokenize([args.prompt]))
 
     if args.init:
         _, y, x = model.shape
@@ -124,10 +143,12 @@ def main(args=None):
         translates = jax.random.uniform(key, [pred.shape[0], 2], minval=-extent, maxval=extent)
         clip_in = sat_vmap(clip_in, (3, clip_size, clip_size), (1, 2), scales, translates)
         image_embeds = image_fn(clip_params, normalize((clip_in + 1) / 2))
+        total_loss = 0
+        for target_embed, w in zip(target_embeds, target_w):
+          total_loss = total_loss + jnp.sum(spherical_dist_loss(image_embeds, target_embed))*w
         if target_img_pth:
-          return jnp.sum(spherical_dist_loss(image_embeds, target_embed)) \
-                 + jnp.sum(spherical_dist_loss(image_embeds, target_img_embed))*target_img_w
-        return jnp.sum(spherical_dist_loss(image_embeds, target_embed))
+          total_loss = total_loss + jnp.sum(spherical_dist_loss(image_embeds, target_img_embed))*target_img_w
+        return total_loss
 
     def clip_cond_fn(x, key, t, extra_args, params, clip_params):
         grad_fn = jax.grad(clip_cond_fn_loss)
