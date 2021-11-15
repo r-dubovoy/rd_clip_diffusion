@@ -41,8 +41,9 @@ def parse_prompts(prompts):
         target_w.append(1)
     else:
         for prompt in splt:
+            prompt = prompt.split(':')
             if len(prompt) == 2:
-                p, w = tuple(prompt.split(':'))
+                p, w = tuple(prompt)
             else:
                 p = prompt
                 w = 1
