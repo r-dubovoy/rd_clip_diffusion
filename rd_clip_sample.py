@@ -40,8 +40,12 @@ def parse_prompts(prompts):
     target_w.append(1)
   else:
     for prompt in splt:
-      p, w = tuple(prompt.split(':'))
-      target_p.append(p)
+      if len(prompt) == 2:
+        p, w = tuple(prompt.split(':'))
+      else:
+        p = prompt
+        w = 1
+      target_p.append(p.lstrip(' ').rstrip(' '))
       target_w.append(float(w))
   return target_p, target_w
 
@@ -121,13 +125,12 @@ def main(args=None):
 
     key = jax.random.PRNGKey(args.seed)
 
-    target_img_pth = args.target_img
-
-    if target_img_pth:
-        target_img = np.expand_dims(clip_preprocess(Image.open(target_img_pth)), 0)
+    target_img_prompts, target_img_w = parse_prompts(args.target_img)
+    target_img_embeds = []
+    for img_prompt in target_img_prompts:
+        target_img = np.expand_dims(clip_preprocess(Image.open(img_prompt)), 0)
         target_img = np.array(target_img)
-        target_img_embed = image_fn(clip_params, target_img)
-        target_img_w = args.target_img_w
+        target_img_embeds.append(image_fn(clip_params, target_img))
 
     def clip_cond_fn_loss(x, key, params, clip_params, t, extra_args):
         dummy_key = jax.random.PRNGKey(0)
@@ -146,8 +149,8 @@ def main(args=None):
         total_loss = 0
         for target_embed, w in zip(target_embeds, target_w):
           total_loss = total_loss + jnp.sum(spherical_dist_loss(image_embeds, target_embed))*w
-        if target_img_pth:
-          total_loss = total_loss + jnp.sum(spherical_dist_loss(image_embeds, target_img_embed))*target_img_w
+        for target_img_embed, w in zip(target_img_embeds, target_img_w):
+          total_loss = total_loss + jnp.sum(spherical_dist_loss(image_embeds, target_img_embed))*w
         return total_loss
 
     def clip_cond_fn(x, key, t, extra_args, params, clip_params):
