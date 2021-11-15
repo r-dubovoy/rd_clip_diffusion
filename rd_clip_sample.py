@@ -5,7 +5,6 @@ CLIP guided sampling from a diffusion model.
 Modified for research by Roman Dubovyi.
 """
 
-
 import argparse
 from functools import partial
 from pathlib import Path
@@ -25,29 +24,31 @@ sys.path.append(str(MODULE_DIR / 'CLIP_JAX'))
 
 import clip_jax
 
+
 def resize_image(image, out_size):
     ratio = image.size[0] / image.size[1]
     area = min(image.size[0] * image.size[1], out_size[0] * out_size[1])
-    size = round((area * ratio)**0.5), round((area / ratio)**0.5)
+    size = round((area * ratio) ** 0.5), round((area / ratio) ** 0.5)
     return image.resize(size, Image.LANCZOS)
 
+
 def parse_prompts(prompts):
-  target_p = []
-  target_w = []
-  splt = prompts.split('|')
-  if splt == [prompts]:
-    target_p.append(prompts)
-    target_w.append(1)
-  else:
-    for prompt in splt:
-      if len(prompt) == 2:
-        p, w = tuple(prompt.split(':'))
-      else:
-        p = prompt
-        w = 1
-      target_p.append(p.lstrip(' ').rstrip(' '))
-      target_w.append(float(w))
-  return target_p, target_w
+    target_p = []
+    target_w = []
+    splt = prompts.split('|')
+    if splt == [prompts]:
+        target_p.append(prompts)
+        target_w.append(1)
+    else:
+        for prompt in splt:
+            if len(prompt) == 2:
+                p, w = tuple(prompt.split(':'))
+            else:
+                p = prompt
+                w = 1
+            target_p.append(p.lstrip(' ').rstrip(' '))
+            target_w.append(float(w))
+    return target_p, target_w
 
 
 def make_normalize(mean, std):
@@ -56,6 +57,7 @@ def make_normalize(mean, std):
 
     def inner(image):
         return (image - mean) / std
+
     return inner
 
 
@@ -99,7 +101,6 @@ def main(args=None):
         p.add_argument('--target_img_w', type=float)
         args = p.parse_args()
 
-
     model = get_model(args.model)
     checkpoint = args.checkpoint
     if not checkpoint:
@@ -112,11 +113,13 @@ def main(args=None):
     normalize = make_normalize(mean=[0.48145466, 0.4578275, 0.40821073],
                                std=[0.26862954, 0.26130258, 0.27577711])
 
-    target_prompts, target_w = parse_prompts(args.prompt)
     target_embeds = []
-    for prompt in target_prompts:
-        target_embeds.append(text_fn(clip_params, clip_jax.tokenize([prompt])))
-    # target_embed = text_fn(clip_params, clip_jax.tokenize([args.prompt]))
+    target_w = []
+
+    if args.prompt != "":
+        target_prompts, target_w = parse_prompts(args.prompt)
+        for prompt in target_prompts:
+            target_embeds.append(text_fn(clip_params, clip_jax.tokenize([prompt])))
 
     if args.init:
         _, y, x = model.shape
@@ -125,12 +128,15 @@ def main(args=None):
 
     key = jax.random.PRNGKey(args.seed)
 
-    target_img_prompts, target_img_w = parse_prompts(args.target_img)
+    target_img_w = []
     target_img_embeds = []
-    for img_prompt in target_img_prompts:
-        target_img = np.expand_dims(clip_preprocess(Image.open(img_prompt)), 0)
-        target_img = np.array(target_img)
-        target_img_embeds.append(image_fn(clip_params, target_img))
+
+    if args.target_img != "":
+        target_img_prompts, target_img_w = parse_prompts(args.target_img)
+        for img_prompt in target_img_prompts:
+            target_img = np.expand_dims(clip_preprocess(Image.open(img_prompt)), 0)
+            target_img = np.array(target_img)
+            target_img_embeds.append(image_fn(clip_params, target_img))
 
     def clip_cond_fn_loss(x, key, params, clip_params, t, extra_args):
         dummy_key = jax.random.PRNGKey(0)
@@ -148,9 +154,9 @@ def main(args=None):
         image_embeds = image_fn(clip_params, normalize((clip_in + 1) / 2))
         total_loss = 0
         for target_embed, w in zip(target_embeds, target_w):
-          total_loss = total_loss + jnp.sum(spherical_dist_loss(image_embeds, target_embed))*w
+            total_loss = total_loss + jnp.sum(spherical_dist_loss(image_embeds, target_embed)) * w
         for target_img_embed, w in zip(target_img_embeds, target_img_w):
-          total_loss = total_loss + jnp.sum(spherical_dist_loss(image_embeds, target_img_embed))*w
+            total_loss = total_loss + jnp.sum(spherical_dist_loss(image_embeds, target_img_embed)) * w
         return total_loss
 
     def clip_cond_fn(x, key, t, extra_args, params, clip_params):
