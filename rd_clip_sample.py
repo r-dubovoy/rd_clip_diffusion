@@ -15,12 +15,12 @@ from einops import repeat
 import jax
 import jax.numpy as jnp
 from PIL import Image
-from tqdm import tqdm, trange
+from tqdm.notebook import tqdm, trange
 
 from diffusion import get_model, get_models, load_params, sampling, utils
 
 MODULE_DIR = Path(__file__).resolve().parent
-sys.path.append(str(MODULE_DIR / 'CLIP_JAX'))
+sys.path.append('/content/v-diffusion-jax/CLIP_JAX')
 
 import clip_jax
 
@@ -100,8 +100,10 @@ def main(args=None):
                        help='the number of timesteps')
         p.add_argument('--target_img', type=str)
         p.add_argument('--target_img_w', type=float)
+        p.add_argument('--save_path', type=str, default="")
         args = p.parse_args()
 
+    save_path = args.save_path
     model = get_model(args.model)
     checkpoint = args.checkpoint
     if not checkpoint:
@@ -188,7 +190,7 @@ def main(args=None):
             cur_batch_size = min(n - i, batch_size)
             outs = run(key, cur_batch_size)
             for j, out in enumerate(outs):
-                utils.to_pil_image(out).save(f'out_{i + j:05}.png')
+                utils.to_pil_image(out).save(f'{save_path}/diffusion_{i + j:05}.png')
 
     try:
         run_all(key, args.n, args.batch_size)
