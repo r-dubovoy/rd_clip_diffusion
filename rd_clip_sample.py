@@ -45,7 +45,7 @@ def parse_prompts(prompts):
             if len(prompt) == 2:
                 p, w = tuple(prompt)
             else:
-                p = prompt
+                p = prompt[0]
                 w = 1
             target_p.append(p.lstrip(' ').rstrip(' '))
             target_w.append(float(w))
